@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深空寫實俄羅斯方塊 - Deep Space Tetris</title>
+    <!-- 引入 Google Fonts 提供高質感科幻字體 -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        /* ==========================================================================
+           全域與基礎樣式重設 (CSS Reset & Base Styling)
+           ========================================================================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none; /* 防止遊戲中頻繁點擊造成選取干擾 */
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030712; /* 極致深空暗黑藍底色 */
+            font-family: 'Rajdhani', sans-serif;
+            color: #e2e8f0;
+        }
+
+        /* 太空背景 Canvas: 固定於最底層覆蓋整個螢幕 */
+        #space-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* 遊戲主要容器：放置在中央，採用科幻透明玻璃擬態 (Glassmorphism) */
+        .game-wrapper {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            padding: 20px;
+        }
+
+        .hud-container {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            background: rgba(10, 16, 28, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 50px rgba(0, 168, 255, 0.15), inset 0 0 20px rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            padding: 24px 30px;
+        }
+
+        /* 側邊資訊面板 (Left & Right Panels) */
+        .panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 130px;
+        }
+
+        .card {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+        }
+
+        .card-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 2px;
+            color: #38bdf8;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            text-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+        }
+
+        .card-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #f8fafc;
+            letter-spacing: 1px;
+            text-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+        }
+
+        /* 預覽畫布：Hold 與 Next */
+        .preview-canvas {
+            display: block;
+            margin: 0 auto;
+            background: rgba(3, 7, 18, 0.7);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* 遊戲核心主畫布 */
+        .main-stage-container {
+            position: relative;
+            padding: 6px;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(147, 51, 234, 0.2));
+            border-radius: 14px;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(56, 189, 248, 0.25);
+        }
+
+        #tetris-board {
+            display: block;
+            background: rgba(3, 7, 18, 0.9);
+            border-radius: 8px;
+        }
+
+        /* 控制說明面板 */
+        .controls-card {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            text-align: left;
+            line-height: 1.5;
+        }
+
+        .controls-card span {
+            color: #38bdf8;
+            font-weight: 600;
+        }
+
+        /* 遊戲結束與暫停遮罩 */
+        .overlay {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            right: 6px;
+            bottom: 6px;
+            background: rgba(3, 7, 18, 0.85);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+            z-index: 20;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .overlay-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.8rem;
+            color: #ef4444;
+            text-shadow: 0 0 15px rgba(239, 68, 68, 0.8);
+            margin-bottom: 12px;
+        }
+
+        .btn {
+            font-family: 'Orbitron', sans-serif;
+            background: linear-gradient(135deg, #0284c7, #6366f1);
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(2, 132, 199, 0.5);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            letter-spacing: 1px;
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(2, 132, 199, 0.8);
+        }
+
+        /* 手機/觸控螢幕簡易提示 */
+        @media (max-width: 768px) {
+            .hud-container {
+                flex-direction: column;
+                gap: 12px;
+                padding: 14px;
+            }
+            .panel {
+                flex-direction: row;
+                justify-content: space-around;
+                width: 100%;
+            }
+            .controls-card {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. 寫實動態星空畫布 (背景層) -->
+    <canvas id="space-bg"></canvas>
+
+    <!-- 2. 遊戲介面核心容器 (HUD層) -->
+    <div class="game-wrapper">
+        <div class="hud-container">
+            
+            <!-- 左側資訊面板：保留方塊 (HOLD) 與操作指引 -->
+            <div class="panel">
+                <div class="card">
+                    <div class="card-title">暫存 (Hold)</div>
+                    <canvas id="hold-canvas" class="preview-canvas" width="100" height="100"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-title">等級 (Level)</div>
+                    <div class="card-value" id="level-display">1</div>
+                </div>
+                <div class="card controls-card">
+                    <div><span>← →</span> : 平移</div>
+                    <div><span>↑ / X</span> : 順轉</div>
+                    <div><span>Z</span> : 逆轉</div>
+                    <div><span>↓</span> : 軟降</div>
+                    <div><span>空白鍵</span> : 硬降</div>
+                    <div><span>C / Shift</span> : 暫存</div>
+                </div>
+            </div>
+
+            <!-- 中央遊戲主畫布與結束覆蓋層 -->
+            <div class="main-stage-container">
+                <canvas id="tetris-board" width="300" height="600"></canvas>
+                
+                <!-- 遊戲結束/暫停介面 -->
+                <div id="game-overlay" class="overlay">
+                    <div class="overlay-title" id="overlay-text">任務失敗</div>
+                    <button id="restart-btn" class="btn">重新啟動</button>
+                </div>
+            </div>
+
+            <!-- 右側資訊面板：下一方塊 (NEXT)、分數 (SCORE)、消行數 (LINES) -->
+            <div class="panel">
+                <div class="card">
+                    <div class="card-title">預覽 (Next)</div>
+                    <canvas id="next-canvas" class="preview-canvas" width="100" height="100"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-title">得分 (Score)</div>
+                    <div class="card-value" id="score-display">0</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">消行 (Lines)</div>
+                    <div class="card-value" id="lines-display">0</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         JavaScript 邏輯：太空星際背景與寫實俄羅斯方塊核心演算法
+         ========================================================================== -->
+    <script>
+    /* ==========================================================================
+       第一部分：寫實深邃太空物理動態背景 (Space Background Engine)
+       ========================================================================== */
+    const bgCanvas = document.getElementById('space-bg');
+    const bgCtx = bgCanvas.getContext('2d');
+
+    // 調整畫布尺寸適應視窗大小
+    function resizeBgCanvas() {
+        bgCanvas.width = window.innerWidth;
+        bgCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeBgCanvas);
+    resizeBgCanvas();
+
+    // 星體結構定義 (含深度視差與自然閃爍週期)
+    const STAR_COUNT = 250;
+    const stars = [];
+
+    class Star {
+        constructor() {
+            this.reset();
+        }
+        reset() {
+            this.x = Math.random() * bgCanvas.width;
+            this.y = Math.random() * bgCanvas.height;
+            // z 軸表示景深：1 ~ 3 像素，越大越靠近前景且移動速度越快
+            this.z = Math.random() * 2.5 + 0.5;
+            this.baseAlpha = Math.random() * 0.7 + 0.3;
+            this.twinkleSpeed = Math.random() * 0.03 + 0.005;
+            this.twinklePhase = Math.random() * Math.PI * 2;
+            this.speedY = this.z * 0.15; // 模擬緩慢前進的宇宙漂浮
+        }
+        update() {
+            this.y -= this.speedY; // 緩慢向上航行
+            if (this.y < 0) {
+                this.y = bgCanvas.height;
+                this.x = Math.random() * bgCanvas.width;
+            }
+            this.twinklePhase += this.twinkleSpeed;
+        }
+        draw(ctx) {
+            const alpha = this.baseAlpha * (0.6 + 0.4 * Math.sin(this.twinklePhase));
+            ctx.fillStyle = `rgba(240, 246, 255, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.z * 0.75, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 為大型明亮恆星繪製微弱光暈
+            if (this.z > 2.0) {
+                ctx.fillStyle = `rgba(186, 230, 253, ${alpha * 0.25})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.z * 2.2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    // 初始化星辰陣列
+    for (let i = 0; i < STAR_COUNT; i++) {
+        stars.push(new Star());
+    }
+
+    // 漂浮星雲 (Nebula) 光斑模擬
+    let nebulaAngle = 0;
+    function drawNebula(ctx) {
+        nebulaAngle += 0.001;
+        const w = bgCanvas.width;
+        const h = bgCanvas.height;
+
+        // 星雲 1: 紫藍色深層氣體雲
+        const g1 = ctx.createRadialGradient(w * 0.3 + Math.sin(nebulaAngle) * 50, h * 0.4, 50, w * 0.3, h * 0.4, w * 0.6);
+        g1.addColorStop(0, 'rgba(79, 70, 229, 0.12)'); // 靛藍
+        g1.addColorStop(0.5, 'rgba(124, 58, 237, 0.05)'); // 紫羅蘭
+        g1.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = g1;
+        ctx.fillRect(0, 0, w, h);
+
+        // 星雲 2: 青綠/青藍色冷光氣體雲
+        const g2 = ctx.createRadialGradient(w * 0.75, h * 0.7 + Math.cos(nebulaAngle) * 40, 30, w * 0.75, h * 0.7, w * 0.5);
+        g2.addColorStop(0, 'rgba(14, 165, 233, 0.1)'); // 青藍
+        g2.addColorStop(0.6, 'rgba(56, 189, 248, 0.03)');
+        g2.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = g2;
+        ctx.fillRect(0, 0, w, h);
+    }
+
+    // 太空背景主動畫迴圈
+    function renderSpace() {
+        bgCtx.fillStyle = '#030712';
+        bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+        // 渲染動態星雲
+        drawNebula(bgCtx);
+
+        // 更新與渲染每顆恆星
+        for (let star of stars) {
+            star.update();
+            star.draw(bgCtx);
+        }
+
+        requestAnimationFrame(renderSpace);
+    }
+    renderSpace();
+
+
+    /* ==========================================================================
+       第二部分：俄羅斯方塊寫實渲染引擎 (Tetris Graphic & Rendering Engine)
+       ========================================================================== */
+    const boardCanvas = document.getElementById('tetris-board');
+    const boardCtx = boardCanvas.getContext('2d');
+    const holdCanvas = document.getElementById('hold-canvas');
+    const holdCtx = holdCanvas.getContext('2d');
+    const nextCanvas = document.getElementById('next-canvas');
+    const nextCtx = nextCanvas.getContext('2d');
+
+    // 棋盤基本規格：標準 10 寬度 x 20 高度
+    const COLS = 10;
+    const ROWS = 20;
+    const BLOCK_SIZE = 30; // 每個方塊單元格 30x30 像素
+
+    // 方塊主題色彩調配：高飽和主色、金屬高光與暗部陰影
+    const PIECE_PALETTE = {
+        'I': { base: '#06b6d4', light: '#67e8f9', dark: '#0e7490', glow: 'rgba(6, 182, 212, 0.6)' }, // 霓虹青
+        'J': { base: '#3b82f6', light: '#93c5fd', dark: '#1d4ed8', glow: 'rgba(59, 130, 246, 0.6)' }, // 深空藍
+        'L': { base: '#f97316', light: '#fdba74', dark: '#c2410c', glow: 'rgba(249, 115, 22, 0.6)' }, // 熾熱橙
+        'O': { base: '#eab308', light: '#fde047', dark: '#a16207', glow: 'rgba(234, 179, 8, 0.6)' },  // 電漿黃
+        'S': { base: '#10b981', light: '#6ee7b7', dark: '#047857', glow: 'rgba(16, 185, 129, 0.6)' }, // 極光綠
+        'T': { base: '#a855f7', light: '#d8b4fe', dark: '#7e22ce', glow: 'rgba(168, 85, 247, 0.6)' }, // 離子紫
+        'Z': { base: '#ef4444', light: '#fca5a5', dark: '#b91c1c', glow: 'rgba(239, 68, 68, 0.6)' },  // 雷射紅
+        'GHOST': { base: 'rgba(255, 255, 255, 0.08)', border: 'rgba(255, 255, 255, 0.25)' }           // 投影方塊
+    };
+
+    /**
+     * 寫實方塊渲染函數：在指定位置繪製具有倒角、金屬斜面光澤與核心發光層的方塊
+     */
+    function renderRealisticBlock(ctx, x, y, size, type, isGhost = false) {
+        if (isGhost) {
+            // 投影方塊：極簡半透明虛影與邊框
+            ctx.save();
+            ctx.strokeStyle = PIECE_PALETTE.GHOST.border;
+            ctx.fillStyle = PIECE_PALETTE.GHOST.base;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(x + 1, y + 1, size - 2, size - 2);
+            ctx.fillRect(x + 1, y + 1, size - 2, size - 2);
+            ctx.restore();
+            return;
+        }
+
+        const color = PIECE_PALETTE[type];
+        if (!color) return;
+
+        ctx.save();
+
+        // 1. 基底矩形
+        ctx.fillStyle = color.base;
+        ctx.fillRect(x, y, size, size);
+
+        // 2. 金屬上方與左側亮部倒角斜面 (Bevel Highlight)
+        ctx.fillStyle = color.light;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + size, y);
+        ctx.lineTo(x + size - 3, y + 3);
+        ctx.lineTo(x + 3, y + 3);
+        ctx.lineTo(x + 3, y + size - 3);
+        ctx.lineTo(x, y + size);
+        ctx.closePath();
+        ctx.fill();
+
+        // 3. 金屬下方與右側暗部陰影斜面 (Bevel Shadow)
+        ctx.fillStyle = color.dark;
+        ctx.beginPath();
+        ctx.moveTo(x + size, y);
+        ctx.lineTo(x + size, y + size);
+        ctx.lineTo(x, y + size);
+        ctx.lineTo(x + 3, y + size - 3);
+        ctx.lineTo(x + size - 3, y + size - 3);
+        ctx.lineTo(x + size - 3, y + 3);
+        ctx.closePath();
+        ctx.fill();
+
+        // 4. 中心鏡面高光面板 (Center Gloss Panel)
+        const innerGrad = ctx.createLinearGradient(x + 4, y + 4, x + size - 4, y + size - 4);
+        innerGrad.addColorStop(0, 'rgba(255, 255, 255, 0.45)');
+        innerGrad.addColorStop(0.4, 'rgba(255, 255, 255, 0.05)');
+        innerGrad.addColorStop(1, 'rgba(0, 0, 0, 0.25)');
+        ctx.fillStyle = innerGrad;
+        ctx.fillRect(x + 3, y + 3, size - 6, size - 6);
+
+        // 5. 外部精細發光邊框 (Neon Rim)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+
+        ctx.restore();
+    }
+
+
+    /* ==========================================================================
+       第三部分：俄羅斯方塊核心幾何與運算 (Core Logic & Data Structures)
+       ========================================================================== */
+    // 7 種經典形狀定義 (矩陣表示)
+    const SHAPES = {
+        'I': [
+            [0, 0, 0, 0],
+            [1, 1, 1, 1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
+        ],
+        'J': [
+            [1, 0, 0],
+            [1, 1, 1],
+            [0, 0, 0]
+        ],
+        'L': [
+            [0, 0, 1],
+            [1, 1, 1],
+            [0, 0, 0]
+        ],
+        'O': [
+            [1, 1],
+            [1, 1]
+        ],
+        'S': [
+            [0, 1, 1],
+            [1, 1, 0],
+            [0, 0, 0]
+        ],
+        'T': [
+            [0, 1, 0],
+            [1, 1, 1],
+            [0, 0, 0]
+        ],
+        'Z': [
+            [1, 1, 0],
+            [0, 1, 1],
+            [0, 0, 0]
+        ]
+    };
+
+    // 建立 10x20 空棋盤
+    function createEmptyBoard() {
+        return Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    }
+
+    let board = createEmptyBoard();
+
+    // 7-Bag 隨機發牌機制 (保證公平發牌)
+    let bag = [];
+    function getNextPieceType() {
+        if (bag.length === 0) {
+            bag = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
+            // Fisher-Yates 洗牌法
+            for (let i = bag.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [bag[i], bag[j]] = [bag[j], bag[i]];
+            }
+        }
+        return bag.pop();
+    }
+
+    // 方塊實例類別
+    class Piece {
+        constructor(type) {
+            this.type = type;
+            this.matrix = SHAPES[type].map(row => [...row]); // 深拷貝形狀
+            // 預設生成於棋盤頂端正中央
+            this.x = Math.floor((COLS - this.matrix[0].length) / 2);
+            this.y = 0;
+        }
+    }
+
+    // 遊戲運行狀態變數
+    let currentPiece = null;
+    let nextPiece = null;
+    let holdPieceType = null;
+    let canHold = true; // 每一次落地前只能 Hold 一次
+    let score = 0;
+    let lines = 0;
+    let level = 1;
+    let isGameOver = false;
+
+    // 掉落節奏與計時變數
+    let dropCounter = 0;
+    let dropInterval = 1000; // 初始下落間隔 (毫秒)
+    let lastFrameTime = 0;
+
+    // 分數面板元素
+    const scoreDisplay = document.getElementById('score-display');
+    const levelDisplay = document.getElementById('level-display');
+    const linesDisplay = document.getElementById('lines-display');
+    const overlay = document.getElementById('game-overlay');
+    const restartBtn = document.getElementById('restart-btn');
+
+    /**
+     * 碰撞檢測：驗證方塊在 (offsetX, offsetY) 偏移位置是否合法
+     */
+    function checkCollision(piece, offsetX, offsetY, testMatrix = null) {
+        const matrix = testMatrix || piece.matrix;
+        for (let r = 0; r < matrix.length; r++) {
+            for (let c = 0; c < matrix[r].length; c++) {
+                if (matrix[r][c] !== 0) {
+                    const nextX = piece.x + c + offsetX;
+                    const nextY = piece.y + r + offsetY;
+
+                    // 檢查左右及底部邊界
+                    if (nextX < 0 || nextX >= COLS || nextY >= ROWS) {
+                        return true;
+                    }
+                    // 檢查是否與已鎖定的方塊重疊
+                    if (nextY >= 0 && board[nextY][nextX] !== 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 方塊旋轉算法：順時針旋轉矩陣 (附帶基本踢牆 Wall-Kick 補償)
+     */
+    function rotateMatrix(matrix, dir = 1) {
+        // 先轉置 (Transpose)，再翻轉列 (Reverse)
+        const rows = matrix.length;
+        const cols = matrix[0].length;
+        const result = Array.from({ length: cols }, () => Array(rows).fill(0));
+
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                if (dir > 0) {
+                    result[x][rows - 1 - y] = matrix[y][x]; // 順時針
+                } else {
+                    result[cols - 1 - x][y] = matrix[y][x]; // 逆時針
+                }
+            }
+        }
+        return result;
+    }
+
+    function rotatePiece(dir = 1) {
+        if (!currentPiece) return;
+        const originalMatrix = currentPiece.matrix;
+        const rotated = rotateMatrix(originalMatrix, dir);
+
+        // 測試原位是否合法，若碰撞則嘗試左右踢牆位移 (Wall Kick)
+        const kicks = [0, -1, 1, -2, 2];
+        for (let k of kicks) {
+            if (!checkCollision(currentPiece, k, 0, rotated)) {
+                currentPiece.x += k;
+                currentPiece.matrix = rotated;
+                return;
+            }
+        }
+    }
+
+    /**
+     * 計算硬降投影方塊 (Ghost Piece) 之落點 Y 座標
+     */
+    function getGhostPosition() {
+        if (!currentPiece) return 0;
+        let ghostY = 0;
+        while (!checkCollision(currentPiece, 0, ghostY + 1)) {
+            ghostY++;
+        }
+        return currentPiece.y + ghostY;
+    }
+
+    /**
+     * 鎖定方塊至棋盤底層，並觸發行消除檢測
+     */
+    function lockPiece() {
+        const matrix = currentPiece.matrix;
+        for (let r = 0; r < matrix.length; r++) {
+            for (let c = 0; c < matrix[r].length; c++) {
+                if (matrix[r][c] !== 0) {
+                    const boardY = currentPiece.y + r;
+                    const boardX = currentPiece.x + c;
+                    if (boardY < 0) {
+                        // 方塊超出頂端，遊戲宣告失敗
+                        triggerGameOver();
+                        return;
+                    }
+                    board[boardY][boardX] = currentPiece.type;
+                }
+            }
+        }
+
+        // 消除已滿的行
+        clearLines();
+
+        // 產生新方塊並重置暫存限制
+        spawnPiece();
+        canHold = true;
+    }
+
+    /**
+     * 滿行消除與計分邏輯
+     */
+    function clearLines() {
+        let linesCleared = 0;
+
+        for (let r = ROWS - 1; r >= 0; r--) {
+            // 如果該行所有儲存格皆非 0，即表示該行已填滿
+            if (board[r].every(cell => cell !== 0)) {
+                linesCleared++;
+                board.splice(r, 1); // 移除填滿的行
+                board.unshift(Array(COLS).fill(0)); // 在頂端補上一行空白
+                r++; // 重新檢查遞補後的新位置
+            }
+        }
+
+        if (linesCleared > 0) {
+            // 經典俄羅斯方塊計分機制 (單行 100, 雙行 300, 三行 500, 四行 800)
+            const lineRewards = [0, 100, 300, 500, 800];
+            score += (lineRewards[linesCleared] || 1000) * level;
+            lines += linesCleared;
+
+            // 每消除 10 行晉升一級並提升下落速度
+            level = Math.floor(lines / 10) + 1;
+            dropInterval = Math.max(120, 1000 - (level - 1) * 90);
+
+            // 更新 UI 數據
+            scoreDisplay.textContent = score;
+            linesDisplay.textContent = lines;
+            levelDisplay.textContent = level;
+        }
+    }
+
+    /**
+     * 產生新方塊
+     */
+    function spawnPiece() {
+        if (!nextPiece) {
+            nextPiece = new Piece(getNextPieceType());
+        }
+        currentPiece = nextPiece;
+        nextPiece = new Piece(getNextPieceType());
+
+        // 檢查新方塊生成起點是否已被佔據
+        if (checkCollision(currentPiece, 0, 0)) {
+            triggerGameOver();
+        }
+
+        // 繪製右側預覽
+        drawPreview(nextCtx, nextPiece.type);
+    }
+
+    /**
+     * 暫存方塊 (Hold) 邏輯
+     */
+    function holdCurrentPiece() {
+        if (!canHold || isGameOver) return;
+
+        if (holdPieceType === null) {
+            holdPieceType = currentPiece.type;
+            spawnPiece();
+        } else {
+            const temp = holdPieceType;
+            holdPieceType = currentPiece.type;
+            currentPiece = new Piece(temp);
+        }
+
+        canHold = false;
+        drawPreview(holdCtx, holdPieceType);
+    }
+
+    /**
+     * 繪製小畫布 (Hold / Next 視窗)
+     */
+    function drawPreview(ctx, type) {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        if (!type) return;
+
+        const matrix = SHAPES[type];
+        const previewCellSize = 20;
+        // 計算居中位移量
+        const offsetX = (ctx.canvas.width - matrix[0].length * previewCellSize) / 2;
+        const offsetY = (ctx.canvas.height - matrix.length * previewCellSize) / 2;
+
+        for (let r = 0; r < matrix.length; r++) {
+            for (let c = 0; c < matrix[r].length; c++) {
+                if (matrix[r][c] !== 0) {
+                    renderRealisticBlock(
+                        ctx,
+                        offsetX + c * previewCellSize,
+                        offsetY + r * previewCellSize,
+                        previewCellSize,
+                        type
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * 遊戲結束判定與展示
+     */
+    function triggerGameOver() {
+        isGameOver = true;
+        overlay.classList.add('active');
+    }
+
+    /**
+     * 重新開始遊戲
+     */
+    function restartGame() {
+        board = createEmptyBoard();
+        score = 0;
+        lines = 0;
+        level = 1;
+        dropInterval = 1000;
+        isGameOver = false;
+        holdPieceType = null;
+        canHold = true;
+
+        scoreDisplay.textContent = '0';
+        linesDisplay.textContent = '0';
+        levelDisplay.textContent = '1';
+
+        overlay.classList.remove('active');
+        holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+
+        nextPiece = null;
+        spawnPiece();
+    }
+    restartBtn.addEventListener('click', restartGame);
+
+
+    /* ==========================================================================
+       第四部分：方塊操作與鍵盤事件監聽 (User Controls)
+       ========================================================================== */
+    window.addEventListener('keydown', (e) => {
+        if (isGameOver) return;
+
+        switch (e.code) {
+            case 'ArrowLeft': // 向左平移
+                if (!checkCollision(currentPiece, -1, 0)) {
+                    currentPiece.x--;
+                }
+                break;
+            case 'ArrowRight': // 向右平移
+                if (!checkCollision(currentPiece, 1, 0)) {
+                    currentPiece.x++;
+                }
+                break;
+            case 'ArrowDown': // 軟降 (Soft Drop)
+                if (!checkCollision(currentPiece, 0, 1)) {
+                    currentPiece.y++;
+                    score += 1; // 軟降給予些微獎勵分
+                    scoreDisplay.textContent = score;
+                }
+                break;
+            case 'ArrowUp':
+            case 'KeyX': // 順時針旋轉
+                rotatePiece(1);
+                break;
+            case 'KeyZ': // 逆時針旋轉
+                rotatePiece(-1);
+                break;
+            case 'Space': // 硬降 (Hard Drop，直接落地鎖定)
+                e.preventDefault(); // 防止網頁滾動
+                const targetY = getGhostPosition();
+                score += (targetY - currentPiece.y) * 2; // 硬降給予雙倍獎勵分
+                scoreDisplay.textContent = score;
+                currentPiece.y = targetY;
+                lockPiece();
+                break;
+            case 'KeyC':
+            case 'ShiftLeft':
+            case 'ShiftRight': // 暫存方塊 (Hold)
+                holdCurrentPiece();
+                break;
+        }
+    });
+
+
+    /* ==========================================================================
+       第五部分：主畫面渲染迴圈 (Main Tetris Render Loop)
+       ========================================================================== */
+    function renderBoardGrid() {
+        // 繪製棋盤細微科幻網格線
+        boardCtx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+        boardCtx.lineWidth = 1;
+        for (let x = 0; x <= boardCanvas.width; x += BLOCK_SIZE) {
+            boardCtx.beginPath();
+            boardCtx.moveTo(x, 0);
+            boardCtx.lineTo(x, boardCanvas.height);
+            boardCtx.stroke();
+        }
+        for (let y = 0; y <= boardCanvas.height; y += BLOCK_SIZE) {
+            boardCtx.beginPath();
+            boardCtx.moveTo(0, y);
+            boardCtx.lineTo(boardCanvas.width, y);
+            boardCtx.stroke();
+        }
+    }
+
+    function renderGameScene() {
+        // 清空棋盤
+        boardCtx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+
+        // 1. 繪製棋盤背景網格
+        renderBoardGrid();
+
+        // 2. 繪製棋盤上已鎖定的方塊
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                if (board[r][c] !== 0) {
+                    renderRealisticBlock(
+                        boardCtx,
+                        c * BLOCK_SIZE,
+                        r * BLOCK_SIZE,
+                        BLOCK_SIZE,
+                        board[r][c]
+                    );
+                }
+            }
+        }
+
+        // 3. 繪製活動中的方塊 (當前操作中方塊與投影)
+        if (currentPiece && !isGameOver) {
+            const ghostY = getGhostPosition();
+            const matrix = currentPiece.matrix;
+
+            // 繪製投影方塊 (Ghost Piece)
+            for (let r = 0; r < matrix.length; r++) {
+                for (let c = 0; c < matrix[r].length; c++) {
+                    if (matrix[r][c] !== 0) {
+                        renderRealisticBlock(
+                            boardCtx,
+                            (currentPiece.x + c) * BLOCK_SIZE,
+                            (ghostY + r) * BLOCK_SIZE,
+                            BLOCK_SIZE,
+                            currentPiece.type,
+                            true // 標記為投影
+                        );
+                    }
+                }
+            }
+
+            // 繪製主角方塊
+            for (let r = 0; r < matrix.length; r++) {
+                for (let c = 0; c < matrix[r].length; c++) {
+                    if (matrix[r][c] !== 0) {
+                        renderRealisticBlock(
+                            boardCtx,
+                            (currentPiece.x + c) * BLOCK_SIZE,
+                            (currentPiece.y + r) * BLOCK_SIZE,
+                            BLOCK_SIZE,
+                            currentPiece.type
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // 遊戲步進主迴圈
+    function gameLoop(timestamp = 0) {
+        const deltaTime = timestamp - lastFrameTime;
+        lastFrameTime = timestamp;
+
+        if (!isGameOver) {
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) {
+                // 自動下落一格
+                if (!checkCollision(currentPiece, 0, 1)) {
+                    currentPiece.y++;
+                } else {
+                    lockPiece();
+                }
+                dropCounter = 0;
+            }
+        }
+
+        // 畫面重繪
+        renderGameScene();
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    // 初始化啟動遊戲
+    spawnPiece();
+    requestAnimationFrame(gameLoop);
+
+    </script>
+</body>
+</html>
